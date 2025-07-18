@@ -8,7 +8,7 @@ fn main() {
     for w in &words {
         char_trie.insert(&w.chars().collect::<Vec<_>>());
     }
-    println!("Character Trie:\n{}", char_trie.visualize_tree());
+    println!("Character Trie:\n{}", char_trie.visualize_tree(Some("")));
 
     // Word trie example
     let mut word_trie = GeneralizationTrie::new();
@@ -20,5 +20,5 @@ fn main() {
     for s in &sentences {
         word_trie.insert(s);
     }
-    println!("Word Trie:\n{}", word_trie.visualize_tree());
+    println!("Word Trie:\n{}", word_trie.visualize_tree(Some(" ")));
 }
