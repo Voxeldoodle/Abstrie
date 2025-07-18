@@ -1,0 +1,7 @@
+[package]
+name = "abstrie_regexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abstrie_core = { path = "../abstrie_core" }

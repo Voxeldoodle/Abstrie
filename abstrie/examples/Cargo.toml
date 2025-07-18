@@ -1,0 +1,9 @@
+[package]
+name = "abstrie_examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+abstrie_core = { path = "../abstrie_core" }
+abstrie_templater = { path = "../abstrie_templater" }
+abstrie_regexer = { path = "../abstrie_regexer" }

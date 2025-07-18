@@ -1,0 +1,8 @@
+[workspace]
+members = [
+    "abstrie_core",
+    "abstrie_templater",
+    "abstrie_regexer",
+    "bindings/python",
+    "examples"
+]
