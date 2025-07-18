@@ -48,7 +48,7 @@ impl<T: Clone + Eq + Hash> GeneralizationTrie<T> {
     {
         use std::collections::VecDeque;
         let token_separator = token_separator.unwrap_or("-");
-        let sequence_ender = ".";
+        let sequence_ender = ".".to_string();
         let mut out_str = String::new();
         let mut stack = VecDeque::new();
         // Each stack entry: (node, level, is_last, label_path, skips)
@@ -80,7 +80,7 @@ impl<T: Clone + Eq + Hash> GeneralizationTrie<T> {
                 } else {
                     String::new()
                 };
-                let _ = write!(out_str, "{}{}{}\n", indent, label, if node.is_terminal { sequence_ender } else { "".to_string() });
+                let _ = write!(out_str, "{}{}{}\n", indent, label, if node.is_terminal { sequence_ender.clone() } else { "".to_string() });
             }
             // Prepare children
             let mut children: Vec<(&T, &TrieNode<T>)> = node.children.iter().collect();
