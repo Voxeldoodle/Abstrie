@@ -50,6 +50,3 @@ println!("{}", trie.visualize_tree());
 
 ## Contributing
 Contributions are welcome! See the requirements and design specification in `abstrie_requirements.md` for details on architecture, testing, and project phases.
-
-## License
-MIT
