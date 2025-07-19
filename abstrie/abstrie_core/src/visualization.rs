@@ -1,4 +1,4 @@
-use std::fmt::Write;
+use std::{collections::HashMap, fmt::Write};
 use crate::trie::*;
 
 /// Helper trait for pretty-printing tree structures
@@ -6,48 +6,93 @@ pub trait TreeDisplay {
     fn print_tree(&self, indent: &str) -> String;
 }
 
-impl<T: std::fmt::Display + Clone + std::hash::Hash + Eq> PrefixNode<T> {
-    pub fn print(&self, dict: &std::collections::HashMap<Vec<T>, Self>, indent: &str, level: usize) {
-        let mut entries: Vec<_> = dict.iter().collect();
-        entries.sort_by(|a, b| {
-            let a_str = a.0.iter().map(|c| format!("{}", c)).collect::<String>();
-            let b_str = b.0.iter().map(|c| format!("{}", c)).collect::<String>();
-            a_str.cmp(&b_str)
-        });
-        
-        for (key, value) in entries {
-            let prefix = key.iter().map(|c| format!("{}", c)).collect::<String>();
-            match value {
-                PrefixNode::Branch(branches) => {
-                    println!("{}├── {} →", indent, prefix);
-                    self.print(branches, &format!("{}│   ", indent), level + 1);
+pub fn print_prefix_tree<T: Clone + Eq + std::hash::Hash + std::fmt::Debug>(
+    tree: &HashMap<PrefixNode<T>, PrefixNode<T>>,
+    token_separator: &str,
+) -> String {
+    use std::collections::VecDeque;
+    let mut out_str = String::new();
+    
+    // Sort nodes by prefix length to process them in order
+    let mut nodes: Vec<_> = tree.iter().collect();
+    nodes.sort_by_key(|(k, _)| k.prefix_length);
+    
+    // Build level structure
+    let mut level_map: HashMap<usize, Vec<(&PrefixNode<T>, &PrefixNode<T>)>> = HashMap::new();
+    for (k, v) in nodes {
+        level_map.entry(k.prefix_length)
+            .or_insert_with(Vec::new)
+            .push((k, v));
+    }
+    
+    // Process each level
+    let mut levels: Vec<_> = level_map.keys().collect();
+    levels.sort();
+    
+    for (level_idx, &level) in levels.iter().enumerate() {
+        if let Some(nodes) = level_map.get(&level) {
+            let is_last_level = level_idx == levels.len() - 1;
+            
+            // Process nodes at this level
+            for (idx, (node, _value)) in nodes.iter().enumerate() {
+                let is_last_node = idx == nodes.len() - 1;
+                
+                // Calculate indent
+                let mut indent = String::new();
+                for _ in 0..level_idx {
+                    indent.push_str("│  ");
                 }
-                PrefixNode::Terminal => {
-                    println!("{}└── {} (terminal)", indent, prefix);
+                
+                // Add branch symbol
+                if level_idx > 0 {
+                    indent.push_str(if is_last_node { "└── " } else { "├── " });
+                }
+                
+                // Print node information
+                let prefixes: Vec<_> = node.prefixes.iter()
+                    .map(|p| format!("{:?}", p))
+                    .collect();
+                let _ = writeln!(
+                    out_str,
+                    "{}len={} prefixes=[{}]",
+                    indent,
+                    node.prefix_length,
+                    prefixes.join(", ")
+                );
+                
+                // Print children if they exist
+                if !node.children.is_empty() {
+                    let mut child_indent = indent.clone();
+                    if !is_last_node {
+                        child_indent.push_str("│  ");
+                    } else {
+                        child_indent.push_str("   ");
+                    }
+                    
+                    let mut children: Vec<_> = node.children.iter().collect();
+                    children.sort_by(|a, b| format!("{:?}", a.0).cmp(&format!("{:?}", b.0)));
+                    
+                    for (child_idx, (key, child)) in children.iter().enumerate() {
+                        let is_last_child = child_idx == children.len() - 1;
+                        let branch = if is_last_child { "└── " } else { "├── " };
+                        let _ = writeln!(
+                            out_str,
+                            "{}{}{:?} -> len={} prefixes=[{}]",
+                            child_indent,
+                            branch,
+                            key,
+                            child.prefix_length,
+                            child.prefixes.iter()
+                                .map(|p| format!("{:?}", p))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
+                    }
                 }
             }
         }
     }
-}
-
-impl LengthNode {
-    pub fn print(&self, dict: &std::collections::HashMap<usize, Self>, level: usize) {
-        let mut entries: Vec<_> = dict.iter().collect();
-        entries.sort_by_key(|a| a.0);
-        
-        let indent = "    ".repeat(level);
-        for (key, value) in entries {
-            match value {
-                LengthNode::Branch(branches) => {
-                    println!("{}├── Length {} →", indent, key);
-                    self.print(branches, level + 1);
-                }
-                LengthNode::Terminal => {
-                    println!("{}└── Length {} (terminal)", indent, key);
-                }
-            }
-        }
-    }
+    out_str
 }
 
 impl<T: Clone + Eq + std::hash::Hash + std::fmt::Display> TreeDisplay for GeneralizationTrie<T> {

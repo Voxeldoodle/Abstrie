@@ -12,8 +12,6 @@ pub use trie::{
     TrieNode,
     Pattern,
     AbstractionStrategy,
-    PrefixNode,
-    LengthNode,
 };
 
 // Re-export visualization traits and functions
@@ -26,8 +24,6 @@ pub mod prelude {
         TrieNode,
         Pattern,
         AbstractionStrategy,
-        PrefixNode,
-        LengthNode,
         TreeDisplay,
     };
 }

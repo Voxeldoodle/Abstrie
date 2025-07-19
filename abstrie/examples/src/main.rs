@@ -1,5 +1,5 @@
 // Usage examples and benchmarks
-use abstrie_core::prelude::*;
+use abstrie_core::{prelude::*, visualization::print_prefix_tree};
 
 fn main() {
     // Character trie example
@@ -34,17 +34,10 @@ fn main() {
     }
     println!("\nPrefix Trie Tree:\n{}", prefix_trie.print_tree(""));
 
-    let (prefixes, lengths) = prefix_trie.get_prefixes_dict();
-    // let (prefixes, lengths) = prefix_trie.get_prefixes_dict_by_path();
-    
-    // Print raw debug representation
-    println!("\nRaw Prefix Dictionary:");
-    println!("{:#?}", prefixes);
-    println!("\nRaw Length Dictionary:");
-    println!("{:#?}", lengths);
+    // Get prefixes tree
+    let prefixes_tree = prefix_trie.get_prefixes_tree();
+    println!("\nRaw Prefixes Tree:\n{:?}", prefixes_tree);
+    println!("\nPrefixes Tree:\n{}", print_prefix_tree(&prefixes_tree, ""));
 
-    println!("\nPrefix Dictionary (branches):");
-    PrefixNode::Terminal.print(&prefixes, "", 0);
-    println!("\nLength Dictionary (branches):");
-    LengthNode::Terminal.print(&lengths, 0);
+
 }

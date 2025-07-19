@@ -1,20 +1,86 @@
 //! Core trie data structures and algorithms
-use std::collections::HashMap;
-use std::fmt;
-use std::hash::Hash;
-
-// Helper enums for prefix dictionary
-#[derive(Debug, Clone)]
-pub enum PrefixNode<T> {
-    Branch(std::collections::HashMap<Vec<T>, PrefixNode<T>>),
-    Terminal,
-}
+use std::collections::{HashMap, HashSet};
+use std::fmt::{self, Debug, Display};
+use std::hash::{Hash, Hasher};
 
 #[derive(Debug, Clone)]
-pub enum LengthNode {
-    Branch(std::collections::HashMap<usize, LengthNode>),
-    Terminal,
+pub struct PrefixNode<T: Clone + Eq + Hash + Debug> {
+    pub prefix_length : usize,
+    pub prefixes : HashSet<Vec<T>>,
+    pub children: HashMap<T, PrefixNode<T>>,
+    pub is_terminal: bool,
 }
+
+impl<T: Clone + Eq + Hash + Debug> PrefixNode<T> {
+    pub fn new_with_prefixes(prefixes: HashSet<Vec<T>>) -> Self {
+        // assert all prefixes have the same length
+        assert!(!prefixes.is_empty(), "Prefixes cannot be empty");
+        assert!(prefixes.iter().all(|p| p.len() == prefixes.iter().next().unwrap().len()), "All prefixes must have the same length");
+        // Create a new PrefixNode with the provided prefixes
+        PrefixNode {
+            prefix_length: prefixes.iter().next().map_or(0, |p| p.len()),
+            prefixes,
+            children: HashMap::new(),
+            is_terminal: false,
+        }
+    }
+
+    pub fn new_with_length(length: usize) -> Self {
+        // Create a new PrefixNode with the specified length
+        PrefixNode {
+            prefix_length: length,
+            prefixes: HashSet::new(),
+            children: HashMap::new(),
+            is_terminal: false,
+        }
+    }
+
+    pub fn add_prefix(&mut self, prefix: Vec<T>) {
+        // Add a prefix to the node
+        assert!(prefix.len() == self.prefix_length, "Prefix length must match node's prefix length");
+        self.prefixes.insert(prefix);
+    }
+}
+
+impl<T: Clone + Eq + Hash + Debug> PartialEq for PrefixNode<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix_length == other.prefix_length
+        // Uncomment for full equality:
+        // && self.prefixes == other.prefixes
+    }
+}
+
+impl<T: Clone + Eq + Hash + Debug> Eq for PrefixNode<T> {}
+
+impl<T: Clone + Eq + Hash + Debug> Hash for PrefixNode<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.prefix_length.hash(state);
+    }
+}
+
+impl<T: Debug + Clone + Eq + Hash> Display for PrefixNode<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.prefixes.is_empty() {
+            return write!(f, "{} {{}}", self.prefix_length);
+        }
+
+        let mut total = 0;
+        let mut parts = Vec::new();
+
+        for p in &self.prefixes {
+            let part = format!("{:?}", p);
+            total += part.len();
+            if total > 100 {
+                parts.push("...".to_string());
+                break;
+            }
+            parts.push(part);
+        }
+
+        write!(f, "{} {{ {} }}", self.prefix_length, parts.join(", "))
+    }
+}
+
 
 pub struct TrieNode<T: Clone + Eq + Hash> {
     pub children: HashMap<T, TrieNode<T>>,
@@ -58,146 +124,117 @@ impl<T: Clone + Eq + Hash> GeneralizationTrie<T> {
         self.root.insert(sequence);
     }
 
-    /// Returns two nested HashMaps:
-    /// - prefixes: HashMap<Vec<T>, ...> representing the trie structure by prefix
-    /// - lengths: HashMap<usize, ...> representing the trie structure by prefix length
-    /// Each leaf is marked with a special value (e.g., Terminal)
-    pub fn get_prefixes_dict(
-        &self,
-    ) -> (
-        std::collections::HashMap<Vec<T>, PrefixNode<T>>,
-        std::collections::HashMap<usize, LengthNode>,
-    )
+    fn update_key(
+        prefix_tree: &mut HashMap<PrefixNode<T>, PrefixNode<T>>,
+        node_to_check: &PrefixNode<T>,
+        prefix: &Vec<T>,
+    ) 
     where
-        T: std::fmt::Display + Clone + Eq + std::hash::Hash + std::fmt::Debug,
+        T: Clone + Eq + Hash + Debug,
     {
-        use std::collections::HashMap;
-        println!("Starting get_prefixes_dict");
-        let mut prefixes: HashMap<Vec<T>, PrefixNode<T>> = HashMap::new();
-        let mut lengths: HashMap<usize, LengthNode> = HashMap::new();
-        let mut stack = vec![(
-            &self.root,
-            Vec::new(), // prefix
-        )];
-        let mut root_stack = vec![Vec::<T>::new()]; // Stack to track ancestor prefixes
-        while let Some((node, prefix)) = stack.pop() {
-            // println!("Processing node with children: {:?}", node.children.keys());
-            print!("Processing node with prefix: {:?}\n", prefix);
-            if !prefix.is_empty() && node.children.len() > 1 {
-                println!("Found branch node with prefix: {:?}", prefix);
-                let pre = if let Some(pre) = root_stack.pop() {
-                    println!("Popped ancestor prefix: {:?}", pre);
-                    pre
-                } else {
-                    println!("No ancestor prefix found, using empty Vec");
-                    Vec::new()
-                };
-                // Insert into prefixes and lengths
-                let mut tmp_p = &mut prefixes;
-                let mut tmp_l = &mut lengths;
-                println!("Current status: {:?} {:?} {:?}", root_stack, tmp_p, tmp_l);
-                // Process root_stack if not empty and has valid prefixes
-                if !root_stack.is_empty() {
-                    // First, ensure all branches exist
-                    for r in &root_stack {
-                        if !r.is_empty() {
-                            println!("Processing root_stack entry: {:?}", r);
-                            let l_r = r.len();
-                            if !tmp_p.contains_key(r) {
-                                println!("Creating new branch for prefix: {:?}", r);
-                                tmp_p.insert(r.clone(), PrefixNode::Branch(HashMap::new()));
-                            } else {
-                                println!("Found existing node for prefix: {:?}", r);
-                                if let Some(PrefixNode::Terminal) = tmp_p.get(r) {
-                                    println!("Converting terminal to branch for: {:?}", r);
-                                    tmp_p.insert(r.clone(), PrefixNode::Branch(HashMap::new()));
-                                }
-                            }
-                            if !tmp_l.contains_key(&l_r) {
-                                let length_map = HashMap::new();
-                                tmp_l.insert(l_r, LengthNode::Branch(length_map));
-                            } else {
-                                if let Some(LengthNode::Terminal) = tmp_l.get(&l_r) {
-                                    tmp_l.insert(l_r, LengthNode::Terminal);
-                                }
-                            }
+        let matching_keys: Vec<PrefixNode<T>> = prefix_tree
+            .keys()
+            .filter(|k| k.prefix_length == node_to_check.prefix_length)
+            .cloned()
+            .collect();
 
-                            tmp_p = tmp_p
-                                .get_mut(r)
-                                .and_then(|n| {
-                                    if let PrefixNode::Branch(map) = n {
-                                        Some(map)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or_else(|| panic!("Branch not found for {:?}", r));
-                            tmp_l = tmp_l
-                                .get_mut(&l_r)
-                                .and_then(|n| {
-                                    if let LengthNode::Branch(map) = n {
-                                        Some(map)
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .unwrap_or_else(|| {
-                                    panic!("Length branch not found for length {}", l_r)
-                                });
-                        }
-                    }
-                }
-
-                // If we have pre
-                if !pre.is_empty() {
-                    // If tmp[pre] is a branch, insert prefix
-                    if let Some(PrefixNode::Branch(map)) = tmp_p.get_mut(&pre) {
-                        if !map.contains_key(&prefix) {
-                            map.insert(prefix.clone(), PrefixNode::Terminal);
-                        }
-                    } else {
-                        // If pre is not a branch, we need to create it
-                        tmp_p.insert(pre.clone(), PrefixNode::Branch(HashMap::new()));
-                        if let Some(PrefixNode::Branch(map)) = tmp_p.get_mut(&pre) {
-                            map.insert(prefix.clone(), PrefixNode::Terminal);
-                        }
-                    }
-                    if let Some(LengthNode::Branch(map)) = tmp_l.get_mut(&pre.len()) {
-                        if !map.contains_key(&prefix.len()) {
-                            map.insert(prefix.len(), LengthNode::Terminal);
-                        }
-                    } else {
-                        // If pre is not a branch, we need to create it
-                        tmp_l.insert(pre.len(), LengthNode::Branch(HashMap::new()));
-                        if let Some(LengthNode::Branch(map)) = tmp_l.get_mut(&pre.len()) {
-                            map.insert(prefix.len(), LengthNode::Terminal);
-                        }
-                    }
-                } else {
-                    if !tmp_p.contains_key(&prefix) {
-                        tmp_p.insert(prefix.clone(), PrefixNode::Terminal);
-                    }
-                    if !tmp_l.contains_key(&prefix.len()) {
-                        tmp_l.insert(prefix.len(), LengthNode::Terminal);
-                    }
-                }
-                root_stack.push(pre);
-                root_stack.push(prefix.clone());
-                println!("Updated root_stack: {:?}", root_stack);
-                println!("Current prefixes tree: {:?}", prefixes);
-            }
-            // print node children
-            println!("Node children: {:?}", node.children.keys());
-            for (k, child) in &node.children {
-                // if !child.is_terminal {
-                    let mut union = prefix.clone();
-                    union.push(k.clone());
-                    println!("Adding child to stack: {:?}", union);
-                    stack.push((child, union));
-                // }
+        for key in matching_keys {
+            if let Some(mut node) = prefix_tree.remove(&key) {
+                node.add_prefix(prefix.clone());
+                prefix_tree.insert(node.clone(), node);
             }
         }
-        (prefixes, lengths)
+    }
+    
+    pub fn get_prefixes_tree(
+        &self,
+    ) -> HashMap<PrefixNode<T>, PrefixNode<T>>
+    where 
+        T: Clone + Eq + Hash + Debug,
+    {
+        let mut lengths = HashMap::new();
+
+        // initialize the stack with a tuple containing the root node and an empty prefix
+        let mut stack: Vec<(&TrieNode<T>, Vec<T>)> = vec![(&self.root, Vec::new())];
+        let mut root_stack: Vec<Vec<T>> = vec![Vec::new()];
+
+        while let Some((node, prefix)) = stack.pop() {
+            // Check if this is a branch point (has multiple children) and not the root
+            if !prefix.is_empty() && node.children.len() > 1 {
+                // Get the ancestor prefix
+                let mut pre = root_stack.pop().unwrap();
+                while !prefix.starts_with(&pre) {
+                    pre = root_stack.pop().unwrap();
+                }
+
+                // Process each prefix in the root_stack to build the tree
+                let mut tmp_l = &mut lengths;
+                for r in root_stack.iter().skip(1) {
+                    let l_r = PrefixNode::new_with_length(r.len());
+                    
+                    // If we haven't seen this length before, create new node
+                    if !tmp_l.contains_key(&l_r) {
+                        println!("Creating new node for prefix: {:?}", r);
+                        let mut new_node = PrefixNode::new_with_length(r.len());
+                        new_node.add_prefix(r.clone());
+                        tmp_l.insert(l_r.clone(), l_r.clone());
+                    }
+                    
+                    // Get or create the child map
+                    if let Some(existing_node) = tmp_l.get_mut(&l_r) {
+                        // Add the prefix to the existing node
+                        existing_node.add_prefix(r.clone());
+                        
+                        // Create child map if it's a leaf
+                        if existing_node.children.is_empty() {
+                            let child_node = PrefixNode::new_with_length(prefix.len());
+                            existing_node.children.insert(r[0].clone(), child_node);
+                        }
+                    }
+                }
+                
+                // Handle the immediate ancestor (pre)
+                if !pre.is_empty() {
+                    let n_pre = PrefixNode::new_with_length(pre.len());
+                    
+                    // Get or create node for the ancestor
+                    if let Some(existing_node) = tmp_l.get(&n_pre) {
+                        // If it exists, add current prefix to its children
+                        let mut new_node = existing_node.clone();
+                        let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
+                        new_node.children.insert(prefix[0].clone(), prefix_node);
+                        tmp_l.insert(n_pre, new_node);
+                    } else {
+                        // Create new node with current prefix as child
+                        let mut new_node = PrefixNode::new_with_length(pre.len());
+                        new_node.add_prefix(pre.clone());
+                        let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
+                        new_node.children.insert(prefix[0].clone(), prefix_node);
+                        tmp_l.insert(n_pre, new_node);
+                    }
+                } else {
+                    // Add the prefix directly to the root level
+                    let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
+                    let n_prefix = PrefixNode::new_with_length(prefix.len());
+                    if !tmp_l.contains_key(&n_prefix) {
+                        tmp_l.insert(n_prefix.clone(), prefix_node);
+                    }
+                }
+                
+                // Update stacks for next iteration
+                root_stack.push(pre);
+                root_stack.push(prefix.clone());
+            }
+            
+            // Add children to the stack for processing
+            for (k, child) in &node.children {
+                let mut next_prefix = prefix.clone();
+                next_prefix.push(k.clone());
+                stack.push((child, next_prefix));
+            }
+        }
+        
+        lengths
     }
 }
 
@@ -228,116 +265,4 @@ pub trait AbstractionStrategy<T: Clone + Eq + Hash> {
     fn should_merge(&self, node_a: &TrieNode<T>, node_b: &TrieNode<T>) -> bool;
     fn merge_nodes(&self, nodes: &[TrieNode<T>]) -> TrieNode<T>;
     fn extract_pattern(&self, path: &[T]) -> Self::Pattern;
-}
-
-impl<T: Clone + Eq + Hash> GeneralizationTrie<T> {
-    pub fn get_prefixes_dict_by_path(
-        &self,
-    ) -> (
-        std::collections::HashMap<Vec<T>, PrefixNode<T>>,
-        std::collections::HashMap<usize, LengthNode>,
-    )
-    where
-        T: std::fmt::Display + Clone + Eq + std::hash::Hash + std::fmt::Debug,
-    {
-        use std::collections::HashMap;
-        println!("Starting get_prefixes_dict_by_path");
-        let mut prefixes: HashMap<Vec<T>, PrefixNode<T>> = HashMap::new();
-        let mut lengths: HashMap<usize, LengthNode> = HashMap::new();
-        let mut stack = vec![(
-            &self.root,
-            Vec::new(), // prefix
-        )];
-        let mut root_stack = vec![Vec::<T>::new()]; // Stack to track ancestor prefixes
-
-        while let Some((node, prefix)) = stack.pop() {
-            println!("Processing node with prefix: {:?}", prefix);
-            
-            // Only process nodes that are branch points
-            if !prefix.is_empty() && node.children.len() > 1 {
-                println!("Found branch node with prefix: {:?}", prefix);
-                
-                // Get the ancestor prefix
-                let pre = root_stack.pop().unwrap_or_else(Vec::new);
-                println!("Popped ancestor prefix: {:?}", pre);
-                
-                // First, handle all ancestors in root_stack
-                for r in &root_stack {
-                    if !r.is_empty() {
-                        // Check and update prefix tree
-                        let should_create_prefix_branch = match prefixes.get(r) {
-                            Some(PrefixNode::Terminal) | None => true,
-                            _ => false,
-                        };
-                        if should_create_prefix_branch {
-                            println!("Creating/updating branch for prefix: {:?}", r);
-                            prefixes.insert(r.clone(), PrefixNode::Branch(HashMap::new()));
-                        }
-                        
-                        // Check and update length tree
-                        let l_r = r.len();
-                        let should_create_length_branch = match lengths.get(&l_r) {
-                            Some(LengthNode::Terminal) | None => true,
-                            _ => false,
-                        };
-                        if should_create_length_branch {
-                            lengths.insert(l_r, LengthNode::Branch(HashMap::new()));
-                        }
-                    }
-                }
-                
-                // Handle the immediate ancestor (pre)
-                if !pre.is_empty() {
-                    // Update prefix tree
-                    let should_create_pre_branch = match prefixes.get(&pre) {
-                        Some(PrefixNode::Terminal) | None => true,
-                        _ => false,
-                    };
-                    if should_create_pre_branch {
-                        prefixes.insert(pre.clone(), PrefixNode::Branch(HashMap::new()));
-                    }
-                    
-                    // Add current prefix as terminal in the ancestor's branch
-                    if let Some(PrefixNode::Branch(map)) = prefixes.get_mut(&pre) {
-                        map.insert(prefix.clone(), PrefixNode::Terminal);
-                    }
-                    
-                    // Update length tree
-                    let pre_len = pre.len();
-                    let should_create_length_branch = match lengths.get(&pre_len) {
-                        Some(LengthNode::Terminal) | None => true,
-                        _ => false,
-                    };
-                    if should_create_length_branch {
-                        lengths.insert(pre_len, LengthNode::Branch(HashMap::new()));
-                    }
-                    
-                    if let Some(LengthNode::Branch(map)) = lengths.get_mut(&pre_len) {
-                        map.insert(prefix.len(), LengthNode::Terminal);
-                    }
-                } else {
-                    // Handle root level prefix
-                    prefixes.insert(prefix.clone(), PrefixNode::Terminal);
-                    lengths.insert(prefix.len(), LengthNode::Terminal);
-                }
-                
-                // Update stacks for next iteration
-                root_stack.push(pre);
-                root_stack.push(prefix.clone());
-                println!("Updated root_stack: {:?}", root_stack);
-                println!("Current prefixes tree: {:?}", prefixes);
-            }
-            
-            // Add all children to the stack
-            println!("Node children: {:?}", node.children.keys());
-            for (k, child) in &node.children {
-                let mut union = prefix.clone();
-                union.push(k.clone());
-                println!("Adding child to stack: {:?}", union);
-                stack.push((child, union));
-            }
-        }
-        
-        (prefixes, lengths)
-    }
 }
