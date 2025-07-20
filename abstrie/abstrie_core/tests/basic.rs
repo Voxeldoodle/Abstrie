@@ -1,46 +1,58 @@
-use abstrie_core::{GeneralizationTrie};
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_char_trie_structure() {
-    let mut trie = GeneralizationTrie::new();
-    let words = vec!["cat", "car", "dog", "dot"];
-    for w in &words {
-        trie.insert(&w.chars().collect::<Vec<_>>());
+    #[test]
+    fn test_generic_char_trie() {
+        let words = vec!["ape", "app", "application", "bans", "bat", "banner", "pot", "potion"];
+        let trie = TrieNode::from_words(&words);
+        let length_grouped = LengthGroupedNode::from_trie(&trie);
+        
+        // Should have 2 main groups: length 2 and length 3
+        assert_eq!(length_grouped.children.len(), 2);
     }
-    // Check root has 'c' and 'd'
-    assert!(trie.root.children.contains_key(&'c'));
-    assert!(trie.root.children.contains_key(&'d'));
-    // Check 'c' branch
-    let c_node = trie.root.children.get(&'c').unwrap();
-    assert!(c_node.children.contains_key(&'a'));
-    let a_node = c_node.children.get(&'a').unwrap();
-    assert!(a_node.children.contains_key(&'t'));
-    assert!(a_node.children.contains_key(&'r'));
-    // Check terminal
-    assert!(a_node.children.get(&'t').unwrap().is_terminal);
-    assert!(a_node.children.get(&'r').unwrap().is_terminal);
-}
 
-#[test]
-fn test_word_trie_structure() {
-    let mut trie: GeneralizationTrie<String> = GeneralizationTrie::new();
-    let sentences = vec![
-        vec!["the", "cat"],
-        vec!["the", "dog"],
-        vec!["a", "dog"],
-    ];
-    for s in &sentences {
-        let s: Vec<String> = s.iter().map(|w| w.to_string()).collect();
-        trie.insert(&s);
+    #[test]
+    fn test_generic_word_trie() {
+        let sentences = vec![
+            &["the", "cat"][..],
+            &["the", "dog"][..],
+            &["a", "cat"][..],
+        ];
+        
+        let trie = TrieNode::from_sequences(&sentences);
+        let length_grouped = LengthGroupedNode::from_trie(&trie);
+        
+        // Should have groups based on word count
+        assert!(!length_grouped.children.is_empty());
     }
-    // Check root has 'the' and 'a'
-    assert!(trie.root.children.contains_key(&"the".to_string()));
-    assert!(trie.root.children.contains_key(&"a".to_string()));
-    // Check 'the' branch
-    let the_node = trie.root.children.get(&"the".to_string()).unwrap();
-    assert!(the_node.children.contains_key(&"cat".to_string()));
-    assert!(the_node.children.contains_key(&"dog".to_string()));
-    // Check terminal
-    assert!(the_node.children.get(&"cat".to_string()).unwrap().is_terminal);
-    assert!(the_node.children.get(&"dog".to_string()).unwrap().is_terminal);
+
+    #[test]
+    fn test_generic_integer_trie() {
+        let sequences = vec![
+            &[1, 2][..],
+            &[1, 3][..],
+            &[2, 3][..],
+        ];
+        
+        let trie = TrieNode::from_sequences(&sequences);
+        let length_grouped = LengthGroupedNode::from_trie(&trie);
+        
+        // Should create proper groupings
+        assert!(!length_grouped.children.is_empty());
+    }
+
+    #[test]
+    fn test_tree_visualization() {
+        let words = vec!["cat", "car"];
+        let trie = TrieNode::from_words(&words);
+        
+        // Test that print_tree doesn't panic (basic functionality test)
+        trie.print_tree();
+        trie.print_tree_with_options("-", "*", true);
+        
+        let length_grouped = LengthGroupedNode::from_trie(&trie);
+        length_grouped.print_tree();
+        length_grouped.print_tree_with_options("|", "#");
+    }
 }

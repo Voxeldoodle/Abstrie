@@ -1,94 +1,18 @@
-//! Core trie data structures and algorithms
-use std::collections::{HashMap, HashSet};
-use std::fmt::{self, Debug, Display};
-use std::hash::{Hash, Hasher};
+use std::collections::{HashMap, BTreeSet, HashSet};
+use std::hash::Hash;
+use std::fmt::{Debug, Display};
 
+// Generic Trie implementation
 #[derive(Debug, Clone)]
-pub struct PrefixNode<T: Clone + Eq + Hash + Debug> {
-    pub prefix_length : usize,
-    pub prefixes : HashSet<Vec<T>>,
-    pub children: HashMap<T, PrefixNode<T>>,
-    pub is_terminal: bool,
+pub struct TrieNode<T> {
+    children: HashMap<Vec<T>, TrieNode<T>>,
+    is_terminal: bool,
 }
 
-impl<T: Clone + Eq + Hash + Debug> PrefixNode<T> {
-    pub fn new_with_prefixes(prefixes: HashSet<Vec<T>>) -> Self {
-        // assert all prefixes have the same length
-        assert!(!prefixes.is_empty(), "Prefixes cannot be empty");
-        assert!(prefixes.iter().all(|p| p.len() == prefixes.iter().next().unwrap().len()), "All prefixes must have the same length");
-        // Create a new PrefixNode with the provided prefixes
-        PrefixNode {
-            prefix_length: prefixes.iter().next().map_or(0, |p| p.len()),
-            prefixes,
-            children: HashMap::new(),
-            is_terminal: false,
-        }
-    }
-
-    pub fn new_with_length(length: usize) -> Self {
-        // Create a new PrefixNode with the specified length
-        PrefixNode {
-            prefix_length: length,
-            prefixes: HashSet::new(),
-            children: HashMap::new(),
-            is_terminal: false,
-        }
-    }
-
-    pub fn add_prefix(&mut self, prefix: Vec<T>) {
-        // Add a prefix to the node
-        assert!(prefix.len() == self.prefix_length, "Prefix length must match node's prefix length");
-        self.prefixes.insert(prefix);
-    }
-}
-
-impl<T: Clone + Eq + Hash + Debug> PartialEq for PrefixNode<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.prefix_length == other.prefix_length
-        // Uncomment for full equality:
-        // && self.prefixes == other.prefixes
-    }
-}
-
-impl<T: Clone + Eq + Hash + Debug> Eq for PrefixNode<T> {}
-
-impl<T: Clone + Eq + Hash + Debug> Hash for PrefixNode<T> {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prefix_length.hash(state);
-    }
-}
-
-impl<T: Debug + Clone + Eq + Hash> Display for PrefixNode<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.prefixes.is_empty() {
-            return write!(f, "{} {{}}", self.prefix_length);
-        }
-
-        let mut total = 0;
-        let mut parts = Vec::new();
-
-        for p in &self.prefixes {
-            let part = format!("{:?}", p);
-            total += part.len();
-            if total > 100 {
-                parts.push("...".to_string());
-                break;
-            }
-            parts.push(part);
-        }
-
-        write!(f, "{} {{ {} }}", self.prefix_length, parts.join(", "))
-    }
-}
-
-
-pub struct TrieNode<T: Clone + Eq + Hash> {
-    pub children: HashMap<T, TrieNode<T>>,
-    pub is_terminal: bool,
-    //TODO: Add more fields as needed (e.g., frequency, metadata)
-}
-
-impl<T: Clone + Eq + Hash> TrieNode<T> {
+impl<T> TrieNode<T> 
+where 
+    T: Clone + Eq + Hash + Debug + Display,
+{
     pub fn new() -> Self {
         TrieNode {
             children: HashMap::new(),
@@ -96,173 +20,504 @@ impl<T: Clone + Eq + Hash> TrieNode<T> {
         }
     }
 
-    pub fn insert(&mut self, sequence: &[T]) {
-        let mut node = self;
-        for token in sequence {
-            node = node
-                .children
-                .entry(token.clone())
-                .or_insert_with(TrieNode::new);
+    // Build trie with proper segmentation based on branching patterns
+    pub fn from_sequences(sequences: &[&[T]]) -> Self {
+        Self::build_segmented_trie(sequences, 0)
+    }
+
+    fn build_segmented_trie(sequences: &[&[T]], start_pos: usize) -> Self {
+        let mut root = TrieNode::new();
+        
+        if sequences.is_empty() {
+            return root;
         }
-        node.is_terminal = true;
-    }
-}
 
-pub struct GeneralizationTrie<T: Clone + Eq + Hash> {
-    pub root: TrieNode<T>,
-    // Add more fields as needed (e.g., node count, config)
-}
-
-impl<T: Clone + Eq + Hash> GeneralizationTrie<T> {
-    pub fn new() -> Self {
-        GeneralizationTrie {
-            root: TrieNode::new(),
-        }
-    }
-
-    pub fn insert(&mut self, sequence: &[T]) {
-        self.root.insert(sequence);
-    }
-
-    fn update_key(
-        prefix_tree: &mut HashMap<PrefixNode<T>, PrefixNode<T>>,
-        node_to_check: &PrefixNode<T>,
-        prefix: &Vec<T>,
-    ) 
-    where
-        T: Clone + Eq + Hash + Debug,
-    {
-        let matching_keys: Vec<PrefixNode<T>> = prefix_tree
-            .keys()
-            .filter(|k| k.prefix_length == node_to_check.prefix_length)
-            .cloned()
+        // Filter sequences that are long enough
+        let valid_sequences: Vec<&[T]> = sequences.iter()
+            .filter(|seq| seq.len() > start_pos)
+            .map(|seq| *seq)
             .collect();
 
-        for key in matching_keys {
-            if let Some(mut node) = prefix_tree.remove(&key) {
-                node.add_prefix(prefix.clone());
-                prefix_tree.insert(node.clone(), node);
+        if valid_sequences.is_empty() {
+            return root;
+        }
+
+        // Check if any sequence ends at this position
+        for seq in sequences {
+            if seq.len() == start_pos {
+                root.is_terminal = true;
+                break;
             }
         }
-    }
-    
-    pub fn get_prefixes_tree(
-        &self,
-    ) -> HashMap<PrefixNode<T>, PrefixNode<T>>
-    where 
-        T: Clone + Eq + Hash + Debug,
-    {
-        let mut lengths = HashMap::new();
 
-        // initialize the stack with a tuple containing the root node and an empty prefix
-        let mut stack: Vec<(&TrieNode<T>, Vec<T>)> = vec![(&self.root, Vec::new())];
-        let mut root_stack: Vec<Vec<T>> = vec![Vec::new()];
-
-        while let Some((node, prefix)) = stack.pop() {
-            // Check if this is a branch point (has multiple children) and not the root
-            if !prefix.is_empty() && node.children.len() > 1 {
-                // Get the ancestor prefix
-                let mut pre = root_stack.pop().unwrap();
-                while !prefix.starts_with(&pre) {
-                    pre = root_stack.pop().unwrap();
-                }
-
-                // Process each prefix in the root_stack to build the tree
-                let mut tmp_l = &mut lengths;
-                for r in root_stack.iter().skip(1) {
-                    let l_r = PrefixNode::new_with_length(r.len());
-                    
-                    // If we haven't seen this length before, create new node
-                    if !tmp_l.contains_key(&l_r) {
-                        println!("Creating new node for prefix: {:?}", r);
-                        let mut new_node = PrefixNode::new_with_length(r.len());
-                        new_node.add_prefix(r.clone());
-                        tmp_l.insert(l_r.clone(), l_r.clone());
-                    }
-                    
-                    // Get or create the child map
-                    if let Some(existing_node) = tmp_l.get_mut(&l_r) {
-                        // Add the prefix to the existing node
-                        existing_node.add_prefix(r.clone());
-                        
-                        // Create child map if it's a leaf
-                        if existing_node.children.is_empty() {
-                            let child_node = PrefixNode::new_with_length(prefix.len());
-                            existing_node.children.insert(r[0].clone(), child_node);
-                        }
-                    }
-                }
-                
-                // Handle the immediate ancestor (pre)
-                if !pre.is_empty() {
-                    let n_pre = PrefixNode::new_with_length(pre.len());
-                    
-                    // Get or create node for the ancestor
-                    if let Some(existing_node) = tmp_l.get(&n_pre) {
-                        // If it exists, add current prefix to its children
-                        let mut new_node = existing_node.clone();
-                        let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
-                        new_node.children.insert(prefix[0].clone(), prefix_node);
-                        tmp_l.insert(n_pre, new_node);
-                    } else {
-                        // Create new node with current prefix as child
-                        let mut new_node = PrefixNode::new_with_length(pre.len());
-                        new_node.add_prefix(pre.clone());
-                        let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
-                        new_node.children.insert(prefix[0].clone(), prefix_node);
-                        tmp_l.insert(n_pre, new_node);
-                    }
-                } else {
-                    // Add the prefix directly to the root level
-                    let prefix_node = PrefixNode::new_with_prefixes([prefix.clone()].into_iter().collect());
-                    let n_prefix = PrefixNode::new_with_length(prefix.len());
-                    if !tmp_l.contains_key(&n_prefix) {
-                        tmp_l.insert(n_prefix.clone(), prefix_node);
-                    }
-                }
-                
-                // Update stacks for next iteration
-                root_stack.push(pre);
-                root_stack.push(prefix.clone());
-            }
-            
-            // Add children to the stack for processing
-            for (k, child) in &node.children {
-                let mut next_prefix = prefix.clone();
-                next_prefix.push(k.clone());
-                stack.push((child, next_prefix));
-            }
-        }
+        // Find the longest common prefix from current position
+        let common_prefix_len = Self::find_longest_common_prefix(&valid_sequences, start_pos);
         
-        lengths
+        if common_prefix_len > 0 {
+            // If there's a common prefix, create segments based on where sequences diverge
+            Self::build_with_common_prefix(&mut root, &valid_sequences, start_pos, common_prefix_len);
+        } else {
+            // No common prefix, group by first element
+            Self::build_without_common_prefix(&mut root, &valid_sequences, start_pos);
+        }
+
+        root
+    }
+
+    fn find_longest_common_prefix(sequences: &[&[T]], start_pos: usize) -> usize {
+        if sequences.len() <= 1 {
+            return 0;
+        }
+
+        let first_seq = sequences[0];
+        let mut common_len = 0;
+
+        for i in start_pos..first_seq.len() {
+            let element = &first_seq[i];
+            
+            // Check if all sequences have the same element at this position
+            let all_match = sequences.iter().all(|seq| {
+                seq.len() > i && seq[i] == *element
+            });
+
+            if all_match {
+                common_len = i - start_pos + 1;
+            } else {
+                break;
+            }
+        }
+
+        common_len
+    }
+
+    fn build_with_common_prefix(
+        root: &mut TrieNode<T>, 
+        sequences: &[&[T]], 
+        start_pos: usize, 
+        common_prefix_len: usize
+    ) {
+        // Create the common prefix segment
+        let common_segment: Vec<T> = sequences[0][start_pos..start_pos + common_prefix_len].to_vec();
+        
+        // Group sequences by what comes after the common prefix
+        let mut groups: HashMap<Option<T>, Vec<&[T]>> = HashMap::new();
+        
+        for seq in sequences {
+            let next_pos = start_pos + common_prefix_len;
+            let next_element = if seq.len() > next_pos {
+                Some(seq[next_pos].clone())
+            } else {
+                None
+            };
+            
+            groups.entry(next_element).or_insert_with(Vec::new).push(seq);
+        }
+
+        // If all sequences have the same continuation or no continuation, 
+        // extend the common segment
+        if groups.len() == 1 {
+            let next_pos = start_pos + common_prefix_len;
+            let child = Self::build_segmented_trie(sequences, next_pos);
+            root.children.insert(common_segment, child);
+        } else {
+            // Create segments based on divergence points
+            Self::build_divergent_segments(root, sequences, start_pos);
+        }
+    }
+
+    fn build_without_common_prefix(
+        root: &mut TrieNode<T>, 
+        sequences: &[&[T]], 
+        start_pos: usize
+    ) {
+        // Group sequences by their first element at start_pos
+        let mut groups: HashMap<T, Vec<&[T]>> = HashMap::new();
+        
+        for seq in sequences {
+            if seq.len() > start_pos {
+                let first_element = seq[start_pos].clone();
+                groups.entry(first_element).or_insert_with(Vec::new).push(seq);
+            }
+        }
+
+        // For each group, find the optimal segment length
+        for (first_element, group_sequences) in groups {
+            let segment = Self::find_optimal_segment(&group_sequences, start_pos);
+            let child = Self::build_segmented_trie(&group_sequences, start_pos + segment.len());
+            root.children.insert(segment, child);
+        }
+    }
+
+    fn build_divergent_segments(
+        root: &mut TrieNode<T>, 
+        sequences: &[&[T]], 
+        start_pos: usize
+    ) {
+        // Group sequences by their prefixes until they diverge
+        let mut groups: HashMap<Vec<T>, Vec<&[T]>> = HashMap::new();
+        
+        for seq in sequences {
+            // Find where this sequence diverges from others
+            let segment = Self::find_segment_until_divergence(seq, sequences, start_pos);
+            groups.entry(segment).or_insert_with(Vec::new).push(seq);
+        }
+
+        for (segment, group_sequences) in groups {
+            let child = Self::build_segmented_trie(&group_sequences, start_pos + segment.len());
+            root.children.insert(segment, child);
+        }
+    }
+
+    fn find_segment_until_divergence(
+        target_seq: &[T], 
+        all_sequences: &[&[T]], 
+        start_pos: usize
+    ) -> Vec<T> {
+        let mut segment_len = 1;
+        
+        // Start with at least one element
+        if target_seq.len() <= start_pos {
+            return Vec::new();
+        }
+
+        // Extend segment until we find a good breakpoint
+        for len in 1..=(target_seq.len() - start_pos) {
+            let potential_segment = target_seq[start_pos..start_pos + len].to_vec();
+            
+            // Check if this is a good breakpoint
+            if Self::is_good_segment_breakpoint(&potential_segment, all_sequences, start_pos) {
+                segment_len = len;
+                break;
+            }
+            segment_len = len;
+        }
+
+        target_seq[start_pos..start_pos + segment_len].to_vec()
+    }
+
+    fn find_optimal_segment(sequences: &[&[T]], start_pos: usize) -> Vec<T> {
+        if sequences.is_empty() {
+            return Vec::new();
+        }
+
+        // For now, use a simple heuristic: extend until sequences diverge
+        let first_seq = sequences[0];
+        let mut segment_len = 1;
+
+        for len in 1..=(first_seq.len() - start_pos) {
+            let current_segment = &first_seq[start_pos..start_pos + len];
+            
+            // Check if all sequences in this group share this prefix
+            let all_share_prefix = sequences.iter().all(|seq| {
+                seq.len() >= start_pos + len && 
+                seq[start_pos..start_pos + len] == *current_segment
+            });
+
+            if all_share_prefix {
+                segment_len = len;
+                
+                // Check if extending further would still be shared
+                if len < first_seq.len() - start_pos {
+                    let extended_len = len + 1;
+                    let still_shared = sequences.iter().all(|seq| {
+                        seq.len() >= start_pos + extended_len && 
+                        seq[start_pos + len] == first_seq[start_pos + len]
+                    });
+                    
+                    if !still_shared {
+                        break; // Good breakpoint found
+                    }
+                }
+            } else {
+                break;
+            }
+        }
+
+        first_seq[start_pos..start_pos + segment_len].to_vec()
+    }
+
+    fn is_good_segment_breakpoint(
+        segment: &[T], 
+        all_sequences: &[&[T]], 
+        start_pos: usize
+    ) -> bool {
+        // A segment is a good breakpoint if:
+        // 1. Some sequences continue after it
+        // 2. Some sequences end at it, or
+        // 3. Sequences diverge after it
+
+        let sequences_with_segment: Vec<&[T]> = all_sequences.iter()
+            .filter(|seq| {
+                seq.len() >= start_pos + segment.len() && 
+                seq[start_pos..start_pos + segment.len()] == *segment
+            })
+            .map(|seq| *seq)
+            .collect();
+
+        if sequences_with_segment.len() <= 1 {
+            return true;
+        }
+
+        // Check if sequences diverge after this segment
+        let next_pos = start_pos + segment.len();
+        let mut next_elements: HashSet<Option<T>> = HashSet::new();
+        
+        for seq in sequences_with_segment {
+            let next_element = if seq.len() > next_pos {
+                Some(seq[next_pos].clone())
+            } else {
+                None
+            };
+            next_elements.insert(next_element);
+        }
+
+        next_elements.len() > 1
+    }
+
+    // Tree visualization method for regular trie
+    pub fn print_tree(&self) {
+        self.print_tree_with_options(" ", ".", false);
+    }
+
+    pub fn print_tree_with_options(&self, separator: &str, terminal_char: &str, quote_elements: bool) {
+        println!("Root{}", if self.is_terminal { terminal_char } else { "" });
+        self.print_tree_recursive("", true, separator, terminal_char, quote_elements);
+    }
+
+    fn print_tree_recursive(&self, prefix: &str, is_last_sibling: bool, separator: &str, terminal_char: &str, quote_elements: bool) {
+        let children: Vec<_> = self.children.iter().collect();
+        
+        for (i, (segment, child)) in children.iter().enumerate() {
+            let is_last = i == children.len() - 1;
+            let branch = if is_last { "└─" } else { "├─" };
+            let child_prefix = if is_last { "  " } else { "│ " };
+            
+            let segment_display = Self::format_segment(segment, separator, quote_elements);
+            println!("{}{} {}{}", prefix, branch, segment_display, 
+                if child.is_terminal { terminal_char } else { "" });
+            
+            child.print_tree_recursive(&format!("{}{}", prefix, child_prefix), is_last, separator, terminal_char, quote_elements);
+        }
+    }
+
+    fn format_segment(segment: &[T], separator: &str, quote_elements: bool) -> String {
+        segment.iter()
+            .map(|item| {
+                if quote_elements {
+                    format!("{:?}", item)
+                } else {
+                    format!("{}", item)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(separator)
     }
 }
 
-impl<T: Clone + Eq + Hash + fmt::Display> fmt::Display for TrieNode<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut keys: Vec<_> = self.children.keys().collect();
-        keys.sort_by(|a, b| format!("{}", a).cmp(&format!("{}", b)));
-        write!(
-            f,
-            "[{}]",
-            keys.iter()
-                .map(|k| format!("{}", k))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
+// Generic Length-grouped trie implementation
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct LengthGroupKey<T> 
+where 
+    T: Clone + Eq + Ord + Hash + Debug,
+{
+    length: usize,
+    segments: BTreeSet<Vec<T>>,
+}
+
+impl<T> LengthGroupKey<T> 
+where 
+    T: Clone + Eq + Ord + Hash + Debug,
+{
+    pub fn new(length: usize, segments: BTreeSet<Vec<T>>) -> Self {
+        LengthGroupKey { length, segments }
     }
 }
 
-pub struct Pattern<T: Clone + Eq + Hash> {
-    pub sequence: Vec<T>,
-    // Add more fields as needed (e.g., frequency, pattern type)
+#[derive(Debug, Clone)]
+pub struct LengthGroupedNode<T> 
+where 
+    T: Clone + Eq + Hash + Debug + std::cmp::Ord,
+{
+    children: HashMap<LengthGroupKey<T>, LengthGroupedNode<T>>,
+    is_terminal: bool,
 }
 
-pub trait AbstractionStrategy<T: Clone + Eq + Hash> {
-    type Config: Default;
-    type Pattern;
+impl<T> LengthGroupedNode<T>
+where 
+    T: Clone + Eq + Ord + Hash + Debug,
+{
+    pub fn new() -> Self {
+        LengthGroupedNode {
+            children: HashMap::new(),
+            is_terminal: false,
+        }
+    }
 
-    fn should_merge(&self, node_a: &TrieNode<T>, node_b: &TrieNode<T>) -> bool;
-    fn merge_nodes(&self, nodes: &[TrieNode<T>]) -> TrieNode<T>;
-    fn extract_pattern(&self, path: &[T]) -> Self::Pattern;
+    pub fn from_trie(trie_root: &TrieNode<T>) -> Self {
+        Self::transform_node_recursive(trie_root)
+    }
+
+    fn transform_node_recursive(current_node: &TrieNode<T>) -> Self {
+        let mut new_node = LengthGroupedNode::new();
+        new_node.is_terminal = current_node.is_terminal;
+
+        // If this is a leaf node, return immediately
+        if current_node.children.is_empty() {
+            return new_node;
+        }
+
+        // Group children by segment length
+        let mut length_groups: HashMap<usize, BTreeSet<Vec<T>>> = HashMap::new();
+        
+        for (segment, _) in &current_node.children {
+            let segment_length = segment.len();
+            length_groups.entry(segment_length)
+                .or_insert_with(BTreeSet::new)
+                .insert(segment.clone());
+        }
+
+        // Process each length group recursively
+        for (length, segment_set) in length_groups {
+            let group_key = LengthGroupKey::new(length, segment_set.clone());
+            
+            // Merge all children in this length group
+            let merged_child = Self::merge_children_by_length_group(
+                &current_node.children,
+                &segment_set,
+            );
+            
+            new_node.children.insert(group_key, merged_child);
+        }
+
+        new_node
+    }
+
+    fn merge_children_by_length_group(
+        original_children: &HashMap<Vec<T>, TrieNode<T>>,
+        segments_in_group: &BTreeSet<Vec<T>>,
+    ) -> Self {
+        let mut merged_node = LengthGroupedNode::new();
+        
+        // Collect all grandchildren from all segments in this group
+        let mut all_grandchildren: HashMap<Vec<T>, TrieNode<T>> = HashMap::new();
+        let mut any_terminal = false;
+
+        for segment in segments_in_group {
+            if let Some(child_node) = original_children.get(segment) {
+                // Check if any child in this group is terminal
+                if child_node.is_terminal {
+                    any_terminal = true;
+                }
+                
+                // Collect all grandchildren
+                for (grandchild_segment, grandchild_node) in &child_node.children {
+                    all_grandchildren.insert(grandchild_segment.clone(), grandchild_node.clone());
+                }
+            }
+        }
+
+        merged_node.is_terminal = any_terminal;
+
+        // Now group all grandchildren by their segment lengths
+        let mut length_groups: HashMap<usize, BTreeSet<Vec<T>>> = HashMap::new();
+        
+        for (segment, _) in &all_grandchildren {
+            let segment_length = segment.len();
+            length_groups.entry(segment_length)
+                .or_insert_with(BTreeSet::new)
+                .insert(segment.clone());
+        }
+
+        // Process each length group recursively
+        for (length, segment_set) in length_groups {
+            let group_key = LengthGroupKey::new(length, segment_set.clone());
+            
+            // Recursively merge this length group
+            let merged_child = Self::merge_children_by_length_group(
+                &all_grandchildren,
+                &segment_set,
+            );
+            
+            merged_node.children.insert(group_key, merged_child);
+        }
+
+        merged_node
+    }
+
+    // Original print method (kept for backward compatibility)
+    pub fn print(&self, depth: usize) {
+        let indent = "  ".repeat(depth);
+        
+        if self.is_terminal {
+            println!("{}Terminal", indent);
+        }
+
+        for (key, child) in &self.children {
+            let segments: Vec<Vec<T>> = key.segments.iter().cloned().collect();
+            println!("{}({}, {:?}):", indent, key.length, segments);
+            child.print(depth + 1);
+        }
+    }
+
+    // Tree visualization method for length-grouped trie
+    pub fn print_tree(&self) {
+        self.print_tree_with_options(" ", ".");
+    }
+
+    pub fn print_tree_with_options(&self, separator: &str, terminal_char: &str) {
+        println!("Root{}", if self.is_terminal { terminal_char } else { "" });
+        self.print_tree_recursive("", true, separator, terminal_char);
+    }
+
+    fn print_tree_recursive(&self, prefix: &str, is_last_sibling: bool, separator: &str, terminal_char: &str) {
+        let mut children: Vec<_> = self.children.iter().collect();
+        // Sort by length first, then by segments for consistent output
+        children.sort_by(|a, b| {
+            a.0.length.cmp(&b.0.length)
+                .then_with(|| a.0.segments.cmp(&b.0.segments))
+        });
+        
+        for (i, (key, child)) in children.iter().enumerate() {
+            let is_last = i == children.len() - 1;
+            let branch = if is_last { "└─" } else { "├─" };
+            let child_prefix = if is_last { "  " } else { "│ " };
+            
+            // Format the segments more compactly
+            let segments_display = if key.segments.len() == 1 {
+                Self::format_segment(key.segments.iter().next().unwrap(), separator)
+            } else {
+                format!("[{}]", 
+                    key.segments.iter()
+                        .map(|seg| Self::format_segment(seg, separator))
+                        .collect::<Vec<_>>()
+                        .join(", "))
+            };
+            
+            println!("{}{}len={} {}{}", 
+                prefix, branch, key.length, segments_display,
+                if child.is_terminal { terminal_char } else { "" });
+            
+            child.print_tree_recursive(&format!("{}{}", prefix, child_prefix), is_last, separator, terminal_char);
+        }
+    }
+
+    fn format_segment(segment: &[T], separator: &str) -> String {
+        segment.iter()
+            .map(|item| format!("{:?}", item))
+            .collect::<Vec<_>>()
+            .join(separator)
+    }
+}
+
+// Helper functions for string-based examples (backward compatibility)
+impl TrieNode<char> {
+    pub fn from_words(words: &[&str]) -> Self {
+        let char_sequences: Vec<Vec<char>> = words.iter()
+            .map(|word| word.chars().collect())
+            .collect();
+        let sequences: Vec<&[char]> = char_sequences.iter()
+            .map(|seq| seq.as_slice())
+            .collect();
+        Self::from_sequences(&sequences)
+    }
 }
