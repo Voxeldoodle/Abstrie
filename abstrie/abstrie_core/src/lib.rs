@@ -8,22 +8,14 @@ pub mod visualization;
 
 // Re-export all public items from trie module
 pub use trie::{
-    GeneralizationTrie,
     TrieNode,
-    Pattern,
-    AbstractionStrategy,
+    LengthGroupedNode,
 };
-
-// Re-export visualization traits and functions
-pub use visualization::TreeDisplay;
 
 // Provide a prelude for convenient imports
 pub mod prelude {
     pub use crate::{
-        GeneralizationTrie,
         TrieNode,
-        Pattern,
-        AbstractionStrategy,
-        TreeDisplay,
+        LengthGroupedNode,
     };
 }
